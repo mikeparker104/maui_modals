@@ -7,7 +7,11 @@ internal sealed class ModalWindowHandler : WindowHandler
     protected override Microsoft.UI.Xaml.Window CreatePlatformElement()
     {
         var window = base.CreatePlatformElement();
-        PlatformInterop.ConfigureAsModal(window);
+
+        var targetParentWindowIndex = VirtualView is ModalWindow modalWindow ? 
+            modalWindow.TargetParentWindowIndex : -1;
+
+        PlatformInterop.ConfigureAsModal(window, targetParentWindowIndex);
         PlatformInterop.RunModal();
 
         void WindowClosed(object sender, Microsoft.UI.Xaml.WindowEventArgs args)

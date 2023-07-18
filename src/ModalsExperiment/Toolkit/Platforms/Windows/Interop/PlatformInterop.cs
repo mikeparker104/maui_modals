@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using Microsoft.Maui.Platform;
 using Microsoft.UI.Windowing;
 
@@ -24,10 +22,19 @@ struct MonitorInfo
     public uint dwFlags;
 }
 
+[Flags]
+enum WindowFlags : uint
+{
+    SWP_NOSIZE = 0x0001,
+    SWP_NOZORDER = 0x0004
+}
+
 internal static class PlatformInterop
 {
     const string User32DllName = "user32.dll";
     const int GWL_HWNDPARENT = -8;
+    const int MONITOR_DEFAULTTONEARESET = 2;
+    const float DefaultDpi = 96.0f; // Standard 100% scaling
 
     // See: https://github.com/microsoft/WindowsAppSDK/discussions/2603
     [DllImport(User32DllName, SetLastError = true, CharSet = CharSet.Unicode)]
@@ -47,12 +54,22 @@ internal static class PlatformInterop
     [DllImport(User32DllName)]
     static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
 
+    [DllImport(User32DllName, SetLastError = true)]
+    static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, WindowFlags windowFlags);
+
+    [DllImport(User32DllName)]
+    static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport(User32DllName)]
+    static extern bool GetWindowRect(IntPtr hWnd, out DisplayRect lpRect);
+
     internal static bool ModalRunning { get; private set; }
 
-    internal static void ConfigureAsModal(Microsoft.UI.Xaml.Window window)
+    internal static void ConfigureAsModal(Microsoft.UI.Xaml.Window window, int targetParentWindowIndex = -1)
     {
-        var appWindows = Application.Current.Windows.TakeWhile(i => i.GetType() != typeof(ModalWindow)).ToList();
-        var parentWindow = appWindows.Last()?.Handler.PlatformView as Microsoft.UI.Xaml.Window;
+        var parentWindow = targetParentWindowIndex >= 0 && targetParentWindowIndex < Application.Current.Windows.Count ?
+            Application.Current.Windows[targetParentWindowIndex]?.Handler.PlatformView as Microsoft.UI.Xaml.Window :
+            Application.Current.Windows.TakeWhile(i => i.GetType() != typeof(ModalWindow)).Last()?.Handler.PlatformView as Microsoft.UI.Xaml.Window;
 
         // Set owner in order to set OverlappedPresenter.IsModal to true
         IntPtr targetWindowHandle = WinRT.Interop.WindowNative.GetWindowHandle(window);
@@ -70,6 +87,14 @@ internal static class PlatformInterop
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
         presenter.IsModal = true;
+
+        void WindowActivated(object sender, Microsoft.UI.Xaml.WindowActivatedEventArgs args)
+        {
+            window.Activated -= WindowActivated;
+            MainThread.BeginInvokeOnMainThread(() => CenterWindowOnSameMonitorAsReferenceWindow(targetWindowHandle, ownerWindowHandle));
+        }
+
+        window.Activated += WindowActivated;
     }
 
     internal static void RunModal()
@@ -93,17 +118,56 @@ internal static class PlatformInterop
     internal static Size GetAvailableScreenSize(Microsoft.UI.Xaml.Window window)
         => GetAvailableScreenSize(WinRT.Interop.WindowNative.GetWindowHandle(window));
 
+    static void CenterWindowOnSameMonitorAsReferenceWindow(IntPtr windowToMove, IntPtr referenceWindow)
+    {
+        IntPtr monitor = MonitorFromWindow(referenceWindow, MONITOR_DEFAULTTONEARESET);
+        MonitorInfo monitorInfo = new MonitorInfo();
+        monitorInfo.cbSize = (uint)Marshal.SizeOf(monitorInfo);
+
+        if (GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            int monitorLeft = monitorInfo.rcWork.left;
+            int monitorTop = monitorInfo.rcWork.top;
+            int monitorWidth = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+            int monitorHeight = monitorInfo.rcWork.bottom - monitorInfo.rcWork.top;
+
+            uint dpi = GetDpiForWindow(windowToMove);
+            var scalingFactor = (int)GetScalingFactor(dpi);
+
+            int dpiAdjustedWidth = (int)(monitorWidth / scalingFactor);
+            int dpiAdjustedHeight = (int)(monitorHeight / scalingFactor);
+
+            int dpiAdjustedX = monitorLeft + (monitorWidth - dpiAdjustedWidth) / 2;
+            int dpiAdjustedY = monitorTop + (monitorHeight - dpiAdjustedHeight) / 2;
+
+            if (!GetWindowRect(windowToMove, out DisplayRect windowSize))
+                return;
+
+            int dpiAdjustedWindowWidth = (int)((windowSize.right - windowSize.left) / scalingFactor);
+            int dpiAdjustedWindowHeight = (int)((windowSize.bottom - windowSize.top) / scalingFactor);
+
+            int posX = dpiAdjustedX + (dpiAdjustedWidth - dpiAdjustedWindowWidth * scalingFactor) / 2;
+            int poxY = dpiAdjustedY + (dpiAdjustedHeight - dpiAdjustedWindowHeight * scalingFactor) / 2;
+
+            SetWindowPos(windowToMove, IntPtr.Zero, posX, poxY, dpiAdjustedWidth, dpiAdjustedHeight, WindowFlags.SWP_NOSIZE | WindowFlags.SWP_NOZORDER);
+        }
+    }
+
+    static float GetScalingFactor(uint dpi) => dpi / DefaultDpi;
+
     static Size GetAvailableScreenSize(IntPtr hwnd)
     {
-        DisplayRect availableRect = new DisplayRect();
         IntPtr hMonitor = MonitorFromWindow(hwnd, 0);
         MonitorInfo monitorInfo = new MonitorInfo();
         monitorInfo.cbSize = (uint)Marshal.SizeOf(monitorInfo);
 
-        if (GetMonitorInfo(hMonitor, ref monitorInfo))
-            availableRect = monitorInfo.rcWork;
+        if (!GetMonitorInfo(hMonitor, ref monitorInfo))
+            return new Size(0, 0);
 
-        return new Size(availableRect.right, availableRect.bottom);
+        int monitorWidth = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+        int monitorHeight = monitorInfo.rcWork.bottom - monitorInfo.rcWork.top;
+
+        return new Size(monitorWidth, monitorHeight);
     }
 
     static void EnableApplicationWindows(IReadOnlyList<Window> applicationWindows)

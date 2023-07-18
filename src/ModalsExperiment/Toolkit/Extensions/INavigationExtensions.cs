@@ -59,16 +59,29 @@ public static class INavigationExtensions
 
 #elif WINDOWS
 
-            var modalWindow = new ModalWindow(page)
+        var appWindowCount = Application.Current.Windows.Count;
+        var targetParentWindowIndex = -1;
+
+        for (var i = 0; i < appWindowCount; i++)
+        {
+            if (Application.Current.Windows[i] == parentWindow)
             {
-                Title = string.IsNullOrWhiteSpace(page.Title) ? page.GetType().ToString() : page.Title,
-                Width = width,
-                Height = height
-            }.Center();
+                targetParentWindowIndex = i;
+                break;
+            }
+        }
 
-            Application.Current.OpenWindow(modalWindow);
+        var modalWindow = new ModalWindow(page)
+        {
+            Title = string.IsNullOrWhiteSpace(page.Title) ? page.GetType().ToString() : page.Title,
+            Width = width,
+            Height = height,
+            TargetParentWindowIndex = targetParentWindowIndex
+        }.Center();
 
-            return Task.CompletedTask;
+        Application.Current.OpenWindow(modalWindow);
+
+        return Task.CompletedTask;
 
 #else
         return navigation.PushModalAsync(page);
