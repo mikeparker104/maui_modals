@@ -77,8 +77,8 @@ public static class INavigationExtensions
             Width = width,
             Height = height,
             TargetParentWindowIndex = targetParentWindowIndex
-        }.Center();
-
+        };
+        
         Application.Current.OpenWindow(modalWindow);
 
         return Task.CompletedTask;
