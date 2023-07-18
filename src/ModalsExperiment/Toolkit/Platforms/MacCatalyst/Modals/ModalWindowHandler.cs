@@ -45,7 +45,10 @@ internal sealed class ModalWindowHandler : WindowHandler
 
     async Task ConfigureModalWindowWhenAddedAsync()
     {
-        _nsWindow = await PlatformInterop.GetNSWindowWhenAdded();
+        if (_modalRunning || PlatformView is not UIWindow uiWindow)
+            return;
+
+        _nsWindow = await uiWindow.GetNSWindowWhenAdded();
 
         if (_nsWindow == null)
             return;

@@ -56,20 +56,20 @@ public static partial class WindowExtensions
 
     static void CenterWindow(UIWindow nativeWindow)
     {
-        var nsWindow = PlatformInterop.GetNSWindow(nativeWindow);
+        var nsWindow = nativeWindow.GetNSWindow();
 
         if (nsWindow == null)
         {
-            _ = CenterWindowWhenAddedAsync();
+            _ = CenterWindowWhenAddedAsync(nativeWindow);
             return;
         }
 
         CenterWindow(nsWindow);
     }
 
-    static async Task CenterWindowWhenAddedAsync()
+    static async Task CenterWindowWhenAddedAsync(UIWindow nativeWindow)
     {
-        var nsWindow = await PlatformInterop.GetNSWindowWhenAdded();
+        var nsWindow = await nativeWindow.GetNSWindowWhenAdded();
 
         if (nsWindow == null)
         {

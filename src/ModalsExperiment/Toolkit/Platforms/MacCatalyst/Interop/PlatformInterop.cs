@@ -42,6 +42,9 @@ internal static class PlatformInterop
     static NativeHandle? _nsApplicationHandle;
     static NativeHandle NSApplicationHandle => _nsApplicationHandle ??= Class.GetHandle("NSApplication");
 
+    static NativeHandle? _nsScreenHandle;
+    static NativeHandle NSScreenHandle => _nsScreenHandle ??= Class.GetHandle("NSScreen");
+
     static Selector _sharedApplicationSelector;
     static Selector SharedApplicationSelector => _sharedApplicationSelector ??= new Selector("sharedApplication");
 
@@ -60,6 +63,9 @@ internal static class PlatformInterop
     static Selector _stopModalSelector;
     static Selector StopModalSelector => _stopModalSelector ??= new Selector("stopModal");
 
+    static Selector _screensSelector;
+    static Selector ScreensSelector => _screensSelector ??= new Selector("screens");
+
     static Selector _screenSelector;
     static Selector ScreenSelector => _screenSelector ??= new Selector("screen");
 
@@ -74,6 +80,32 @@ internal static class PlatformInterop
 
     internal static bool ModalRunning { get; private set; }
 
+    internal static int GetScreenIndex(this UIWindow uiWindow)
+    {
+        var nsWindow = uiWindow.GetNSWindow();
+
+        if (nsWindow == null)
+            return -1;
+
+        var nsScreen = Runtime.GetNSObject(NSScreenHandle);
+        var screens = nsScreen.PerformSelector(ScreensSelector) as NSArray;
+
+        var screen = nsWindow.PerformSelector(ScreenSelector);
+
+        var screenCount = screens.Count;
+
+        for (nuint i = 0; i < screenCount; i++)
+        {
+            var screenHandle = screens.ValueAt(i);
+            var screenObject = Runtime.GetNSObject(screenHandle);
+
+            if (screenObject == screen)
+                return (int)i;
+        }
+
+        return -1;
+    }
+
     internal static NSObject GetNSWindow(this UIWindow uiWindow)
     {
         var nsApplication = Runtime.GetNSObject(NSApplicationHandle);
@@ -85,6 +117,9 @@ internal static class PlatformInterop
             if (!nsWindow.Description.Contains("UINSWindow"))
                 continue;
 
+            // NOTE: Accessing UINSWindow.uiWindows will result in the following warning:
+            // WARNING: SPI usage of '-[UINSWindow uiWindows]' is being shimmed. This will break in the future. Please file a radar requesting API for what you are trying to do.
+            // Use of SPIs (System Programming Interfaces) in Mac Catalyst applications are not officially supported and may lead to compatibility issues in future.
             var uiWindows = (nsWindow.ValueForKey(new NSString("uiWindows")) as NSArray)?.Cast<UIWindow>() ?? Enumerable.Empty<UIWindow>();
 
             if (uiWindows.Contains(uiWindow))
@@ -94,8 +129,13 @@ internal static class PlatformInterop
         return null;
     }
 
-    internal static async Task<NSObject> GetNSWindowWhenAdded()
+    internal static async Task<NSObject> GetNSWindowWhenAdded(this UIWindow uiWindow)
     {
+        var nsWindow = uiWindow.GetNSWindow();
+
+        if (nsWindow != null)
+            return nsWindow;
+
         var nsApplication = Runtime.GetNSObject(NSApplicationHandle);
         var sharedApplication = nsApplication.PerformSelector(SharedApplicationSelector);
 
@@ -103,7 +143,12 @@ internal static class PlatformInterop
         NSArray newWindows = default;
 
         var count = 0;
-        var maxCount = 100;
+
+#if DEBUG
+        var maxCount = 10000;
+#else
+        var maxCount = 2000;
+#endif
 
         while (count < maxCount)
         {
@@ -120,11 +165,12 @@ internal static class PlatformInterop
             return null;
 
         var addedNSWindow = newWindows.Except(currentWindows).First();
+        nsWindow = uiWindow.GetNSWindow();
 
-        return addedNSWindow;
+        return addedNSWindow.Handle == nsWindow.Handle ? nsWindow : null;
     }
 
-    internal static void ConfigureAsModal(NSObject nsWindow)
+    internal static void ConfigureAsModal(NSObject nsWindow, int screenIndex = -1)
     {
         if (nsWindow == null)
             return;
@@ -151,7 +197,7 @@ internal static class PlatformInterop
             StandardWindowButtonSetHiddenSelector.Handle,
             true);
 
-        CenterWindow(nsWindow);
+        CenterWindow(nsWindow, screenIndex);
     }
 
     internal static void RunModal(NSObject nsWindow)
@@ -182,7 +228,45 @@ internal static class PlatformInterop
         ModalRunning = false;
     }
 
-    static Size GetAvailableScreenSize(NSObject nsWindow)
+    internal static void CenterWindow(NSObject nsWindow, int screenIndex = -1)
+    {
+        if (!nsWindow.RespondsToSelector(SetFrameOriginSelector))
+            return;
+
+        var visibleFrame = screenIndex != -1 ? GetVisibleFrame(screenIndex) : GetVisibleFrame(nsWindow);
+
+        if (visibleFrame == default)
+            return;
+
+        var windowSize = GetWindowSize(nsWindow);
+
+        if (windowSize == default)
+            return;
+
+        var windowX = visibleFrame.X + (visibleFrame.Width - windowSize.Width) / 2;
+        var windowY = visibleFrame.Y + (visibleFrame.Height - windowSize.Height) / 2;
+
+        objc_msgSendCGPoint(nsWindow.Handle, SetFrameOriginSelector.Handle, new CGPoint(windowX, windowY));
+    }
+
+    static NSObject GetScreenAtIndex(int index)
+    {
+        var nsScreen = Runtime.GetNSObject(NSScreenHandle);
+        var screens = nsScreen.PerformSelector(ScreensSelector) as NSArray;
+
+        var requestedIndex = (nuint)index;
+        var screenCount = screens.Count;
+
+        if (requestedIndex < 0 || requestedIndex >= screenCount)
+            return null;
+
+        var screenHandle = screens.ValueAt(requestedIndex);
+        var screen = Runtime.GetNSObject(screenHandle);
+
+        return screen;
+    }
+
+    static CGRect GetVisibleFrame(NSObject nsWindow)
     {
         // Get the screen that the window is displayed on
         NSObject screen = Runtime.GetNSObject(IntPtr_objc_msgSend(nsWindow.Handle, ScreenSelector.Handle));
@@ -195,7 +279,23 @@ internal static class PlatformInterop
         if (availableScreen == default)
             return default;
 
-        return new Size(availableScreen.Size.Width, availableScreen.Size.Height);
+        return availableScreen;
+    }
+
+    static CGRect GetVisibleFrame(int screenIndex)
+    {
+        // Get the screen based on the provided screen index
+        NSObject screen = GetScreenAtIndex(screenIndex);
+
+        if (screen == null)
+            return default;
+
+        RectangleF_objc_msgSend_stret(out CGRect availableScreen, screen.Handle, VisibleFrameSelector.Handle);
+
+        if (availableScreen == default)
+            return default;
+
+        return availableScreen;
     }
 
     static Size GetWindowSize(NSObject nsWindow)
@@ -207,28 +307,4 @@ internal static class PlatformInterop
 
         return new Size(windowSize.Size.Width, windowSize.Size.Height);
     } 
-
-    internal static void CenterWindow(NSObject nsWindow)
-    {
-        if (!nsWindow.RespondsToSelector(SetFrameOriginSelector))
-            return;
-
-        var screenSize = GetAvailableScreenSize(nsWindow);
-
-        if (screenSize == default)
-            return;
-
-        var windowSize = GetWindowSize(nsWindow);
-
-        if (windowSize == default)
-            return;
-
-        var screenCenterX = screenSize.Width / 2;
-        var screenCenterY = screenSize.Height / 2;
-
-        var windowX = screenCenterX - (windowSize.Width / 2.0);
-        var windowY = screenCenterY - (windowSize.Height / 2.0);
-
-        objc_msgSendCGPoint(nsWindow.Handle, SetFrameOriginSelector.Handle, new CGPoint(windowX, windowY));
-    }
 }
