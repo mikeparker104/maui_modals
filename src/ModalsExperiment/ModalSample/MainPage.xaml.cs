@@ -9,5 +9,5 @@ public partial class MainPage : ContentPage
 	}
 
     void ShowModalButtonClicked(object sender, EventArgs e)
-        => _ = Navigation.PushModalAsyncEx(new ModalPage(), Window.Width / 2, Window.Height / 2);
+        => _ = Navigation.PushModalAsyncEx(new ModalPage(), Window.Width / 2, Window.Height / 2, GetParentWindow());
 }

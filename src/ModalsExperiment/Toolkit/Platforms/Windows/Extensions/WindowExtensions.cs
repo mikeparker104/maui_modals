@@ -1,4 +1,5 @@
 ﻿using Toolkit;
+using Microsoft.Maui.Platform;
 
 namespace Microsoft.Maui.Controls;
 
@@ -36,8 +37,12 @@ public static partial class WindowExtensions
 
     static void CenterWindow(Window window, Microsoft.UI.Xaml.Window nativeWindow)
     {
+        var density = nativeWindow.GetDisplayDensity();
+
         var screenSize = PlatformInterop.GetAvailableScreenSize(nativeWindow);
-        window.X = (screenSize.Width - window.Width) / 2;
-        window.Y = (screenSize.Height - window.Height) / 2;
+
+        // Center the window
+        window.X = (screenSize.Width / density - window.Width) / 2;
+        window.Y = (screenSize.Height / density - window.Height) / 2;
     }
 }

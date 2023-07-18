@@ -4,18 +4,18 @@ namespace Microsoft.Maui.Controls;
 
 public static class INavigationExtensions
 {
-    public static Task PushModalAsyncEx(this INavigation navigation, Page page)
+    public static Task PushModalAsyncEx(this INavigation navigation, Page page, Window parentWindow = null)
     {
         var width = page.WidthRequest != -1 ? (int)page.WidthRequest : 800;
         var height = page.HeightRequest != -1 ? (int)page.HeightRequest : 600;
 
-        return PushModalAsyncEx(navigation, page, width, height);
+        return PushModalAsyncEx(navigation, page, width, height, parentWindow);
     }
 
-    public static Task PushModalAsyncEx(this INavigation navigation, Page page, double width, double height)
-        => PushModalAsyncEx(navigation, page, (int)width, (int)height);
+    public static Task PushModalAsyncEx(this INavigation navigation, Page page, double width, double height, Window parentWindow = null)
+        => PushModalAsyncEx(navigation, page, (int)width, (int)height, parentWindow);
 
-    public static Task PushModalAsyncEx(this INavigation navigation, Page page, int width, int height)
+    public static Task PushModalAsyncEx(this INavigation navigation, Page page, int width, int height, Window parentWindow = null)
     {
         if (width <= 0 || height <= 0)
             throw new ArgumentException($"Parameters {nameof(width)} and {nameof(height)} must be greater than 0");
@@ -37,12 +37,15 @@ public static class INavigationExtensions
             }
             // ===============================================================
 
+            var parentWindowScreenIndex = parentWindow?.Handler.PlatformView is UIKit.UIWindow uiWindow ? uiWindow.GetScreenIndex() : -1;
+
             var modalWindow = new ModalWindow(page)
             {
                 MinimumWidth = width,
                 MaximumWidth = width,
                 MinimumHeight = height,
-                MaximumHeight = height
+                MaximumHeight = height,
+                TargetScreenIndex = parentWindowScreenIndex
             };
 
             Application.Current.OpenWindow(modalWindow);
@@ -56,16 +59,29 @@ public static class INavigationExtensions
 
 #elif WINDOWS
 
-            var modalWindow = new ModalWindow(page)
+        var appWindowCount = Application.Current.Windows.Count;
+        var targetParentWindowIndex = -1;
+
+        for (var i = 0; i < appWindowCount; i++)
+        {
+            if (Application.Current.Windows[i] == parentWindow)
             {
-                Title = string.IsNullOrWhiteSpace(page.Title) ? page.GetType().ToString() : page.Title,
-                Width = width,
-                Height = height
-            }.Center();
+                targetParentWindowIndex = i;
+                break;
+            }
+        }
 
-            Application.Current.OpenWindow(modalWindow);
+        var modalWindow = new ModalWindow(page)
+        {
+            Title = string.IsNullOrWhiteSpace(page.Title) ? page.GetType().ToString() : page.Title,
+            Width = width,
+            Height = height,
+            TargetParentWindowIndex = targetParentWindowIndex
+        };
+        
+        Application.Current.OpenWindow(modalWindow);
 
-            return Task.CompletedTask;
+        return Task.CompletedTask;
 
 #else
         return navigation.PushModalAsync(page);
