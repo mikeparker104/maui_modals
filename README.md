@@ -17,7 +17,7 @@ The ```Button``` **Clicked** handler uses a version of the existing [INavigation
 
 ```csharp
 void ShowModalButtonClicked(object sender, EventArgs e)
-    => _ = Navigation.PushModalAsyncEx(new ModalPage(), Window.Width / 2, Window.Height / 2);
+    => _ = Navigation.PushModalAsyncEx(new ModalPage(), Window.Width / 2, Window.Height / 2, GetParentWindow());
 ```
 
 In this example, a width and height are provided for the modal window so it appears as half the size of the ```Window``` it was opened from. 
