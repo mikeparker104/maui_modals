@@ -19,10 +19,10 @@ internal static class PlatformInterop
     const string LIBOBJC_DYLIB = "/usr/lib/libobjc.dylib";
 
     [DllImport(LIBOBJC_DYLIB, EntryPoint = "objc_msgSend")]
-    extern static void void_objc_msgSend_bool(IntPtr receiver, IntPtr selector, bool arg1);
+    static extern void void_objc_msgSend_bool(IntPtr receiver, IntPtr selector, bool arg1);
 
     [DllImport(LIBOBJC_DYLIB, EntryPoint = "objc_msgSend")]
-    extern static IntPtr IntPtr_objc_msgSend_IntPtr(IntPtr receiver, IntPtr selector, IntPtr arg1);
+    static extern IntPtr IntPtr_objc_msgSend_IntPtr(IntPtr receiver, IntPtr selector, IntPtr arg1);
 
     [DllImport(LIBOBJC_DYLIB, EntryPoint = "objc_msgSend")]
     static extern void objc_msgSend(IntPtr handle, IntPtr selector);
@@ -34,7 +34,10 @@ internal static class PlatformInterop
     static extern IntPtr IntPtr_objc_msgSend(IntPtr receiver, IntPtr selector);
 
     [DllImport(LIBOBJC_DYLIB, EntryPoint = "objc_msgSend_stret")]
-    extern static void RectangleF_objc_msgSend_stret(out CGRect retval, IntPtr receiver, IntPtr selector);
+    static extern void RectangleF_objc_msgSend_stret(out CGRect retval, IntPtr receiver, IntPtr selector);
+
+    [DllImport(LIBOBJC_DYLIB, EntryPoint = "objc_msgSend")]
+    static extern CGRect CGRect_objc_msgSend(IntPtr receiver, IntPtr selector);
 
     [DllImport(LIBOBJC_DYLIB, EntryPoint = "objc_msgSend")]
     static extern void objc_msgSendCGPoint(IntPtr receiver, IntPtr selector, CGPoint point);
@@ -274,7 +277,12 @@ internal static class PlatformInterop
         if (screen == null)
             return default;
 
-        RectangleF_objc_msgSend_stret(out CGRect availableScreen, screen.Handle, VisibleFrameSelector.Handle);
+        CGRect availableScreen;
+
+        if (RuntimeInformation.ProcessArchitecture != Architecture.Arm64)
+            RectangleF_objc_msgSend_stret(out availableScreen, screen.Handle, VisibleFrameSelector.Handle);
+        else
+            availableScreen = CGRect_objc_msgSend(screen.Handle, VisibleFrameSelector.Handle);
 
         if (availableScreen == default)
             return default;
@@ -290,7 +298,12 @@ internal static class PlatformInterop
         if (screen == null)
             return default;
 
-        RectangleF_objc_msgSend_stret(out CGRect availableScreen, screen.Handle, VisibleFrameSelector.Handle);
+        CGRect availableScreen;
+
+        if (RuntimeInformation.ProcessArchitecture != Architecture.Arm64)
+            RectangleF_objc_msgSend_stret(out availableScreen, screen.Handle, VisibleFrameSelector.Handle);
+        else
+            availableScreen = CGRect_objc_msgSend(screen.Handle, VisibleFrameSelector.Handle);
 
         if (availableScreen == default)
             return default;
@@ -300,7 +313,12 @@ internal static class PlatformInterop
 
     static Size GetWindowSize(NSObject nsWindow)
     {
-        RectangleF_objc_msgSend_stret(out CGRect windowSize, nsWindow.Handle, FrameSelector.Handle);
+        CGRect windowSize;
+
+        if (RuntimeInformation.ProcessArchitecture != Architecture.Arm64)
+            RectangleF_objc_msgSend_stret(out windowSize, nsWindow.Handle, FrameSelector.Handle);
+        else
+            windowSize = CGRect_objc_msgSend(nsWindow.Handle, FrameSelector.Handle);
 
         if (windowSize == default)
             return default;
